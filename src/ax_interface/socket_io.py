@@ -14,7 +14,7 @@ from .protocol import AgentX
 class SocketManager:
     # TODO: parameterize
     SOCKET_CONNECT_TIMEOUT = 1  # seconds
-    TRY_RETRY_INTERVAL = 3  # seconds
+    RETRY_INTERVAL = 3  # seconds
     RETRY_ERROR_THRESHOLD = 10  # seconds
 
     def __init__(self, mib_table, run_event, loop):
@@ -30,6 +30,7 @@ class SocketManager:
         Try/Retry connection coroutine to attach the socket.
         """
         failed_connections = 0
+        failed_retry_interval = SocketManager.RETRY_INTERVAL
 
         logger.info("Connection loop starting...")
         # keep the connection alive while the agent is running
@@ -50,17 +51,25 @@ class SocketManager:
                 self.loop.call_later(1, protocol.opening_handshake)
                 # connection established, wait until the transport closes (or loses connection)
                 await protocol.closed.wait()
+
+                # reset error state
+                failed_connections = 0
+                failed_retry_interval = SocketManager.RETRY_INTERVAL
+
             except OSError:
                 # We couldn't open the socket.
                 failed_connections += 1
-                # adjust the log level based on how long we've been waiting.
+                # adjust the log level based on failed times
                 log_level = logging.WARNING if failed_connections <= SocketManager.RETRY_ERROR_THRESHOLD \
                     else logging.ERROR
+                # adjust the log interval based on failed times
+                if failed_connections > SocketManager.RETRY_ERROR_THRESHOLD and failed_retry_interval < 3600:
+                    failed_retry_interval = failed_retry_interval * 2
 
                 logger.log(log_level, "Socket bind failed. \"Is 'snmpd' running?\". Retrying in {} seconds..." \
-                           .format(SocketManager.TRY_RETRY_INTERVAL))
+                           .format(failed_retry_interval))
                 # try again soon
-                await asyncio.sleep(SocketManager.TRY_RETRY_INTERVAL)
+                await asyncio.sleep(failed_retry_interval)
 
         logger.info("Run disabled. Connection loop stopping...")
 
