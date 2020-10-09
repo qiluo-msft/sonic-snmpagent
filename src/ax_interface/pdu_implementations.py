@@ -287,6 +287,7 @@ class GetNextPDU(GetPDU):
 
         for sr in self.sr:
             vr = lut.get_next(sr)
+            print('vr=', vr)
             var_bind_list.append(vr)
 
         response_pdu = ResponsePDU(
